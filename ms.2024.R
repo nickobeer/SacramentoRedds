@@ -90,11 +90,11 @@ print(head(x))
 
 
 #==== begin processing ====
-annualtotals <- NULL
+annualtotalscarcass <- NULL
 for(year in allyears){
-  annualtotals <- rbind.data.frame(annualtotals,cbind.data.frame(year,raw=sum(x$SumOfCount[x$year==year])))
+  annualtotalscarcass <- rbind.data.frame(annualtotalscarcass,cbind.data.frame(year,raw=sum(x$SumOfCount[x$year==year])))
 }
-print(annualtotals)
+print("Annualtotals from carcasses");print(annualtotalscarcass)
 
 carcassraw <- list()
 carcassrawsections <- NULL
@@ -157,20 +157,26 @@ for(year in allyears){
     carcassexpand[[as.character(year)]] <- newuse2
     write_csv(newuse2,paste0(outDirectory,"carcassExpand.",year,".csv"))
     if(year==min(allyears))print(paste("year","raw","expand"))
-    print(paste(year,sum(use[,-1]),sum(newuse2[,-1])))
+    print(paste(year,sum(use[,-1]),sum(newuse2[,-1]),sum(use[,-1]) - sum(newuse2[,-1])))
 }
 
 # WEB call to CBR database for aerial redds
-usereddsaerial <- list()
-i <- 0
-for(year in allyears){
-  print(year)
-  raw <- 5
-  string <- "http://cbr.washington.edu/sac-bin/fishmodel/getandplottemp.pl?dirUseId=test47&temponly=yes&tempsource=dbtemp&hatchmechanism=atu"  
-  string2 <- paste(string,"&tempyear=",year,"&raw=",raw,"&redds=dbredds&reddyear=",year,sep="")
-  usereddsaerial[[as.character(year)]] <- read.csv(string2)
+# if(0) will prevent web calls and load from static file locally generated
+if(0){
+  usereddsaerial <- list()
+  i <- 0
+  for(year in allyears){
+    print(year)
+    raw <- 5
+    string <- "http://cbr.washington.edu/sac-bin/fishmodel/getandplottemp.pl?dirUseId=test47&temponly=yes&tempsource=dbtemp&hatchmechanism=atu"  
+    string2 <- paste(string,"&tempyear=",year,"&raw=",raw,"&redds=dbredds&reddyear=",year,sep="")
+    usereddsaerial[[as.character(year)]] <- read.csv(string2)
+  }
+  save(usereddsaerial,file="usereddsaerial.Rdata")
+} else {
+  load("usereddsaerial.Rdata",verbose = TRUE)
+  
 }
-
 #=== comb through usereddsaerial list for a tally by in or out of carcass area (RKM444 or above) ====
 # RKM names in aerial redd  data are locations used WITHIN the reaches. Compare to table 1 in manuscript
 allabove <- allbelow <- 0
@@ -187,15 +193,18 @@ print(paste(allabove,allbelow,allbelow/(allabove+allbelow)))
 
 #=== process aerial ====
 
-allspawn <- gaps <- NULL
+allspawn <- gaps <- annualtotalsaerial <-  NULL
 for(y in allyears){ 
   rr <- usereddsaerial[[as.character(y)]]
   rrbyday <- as_tibble(rr) %>%  group_by(Day) %>% transmute(N = sum(across(starts_with("RKM"))))
   newgaps <- rrbyday$Day[2:length(rrbyday$Day)] - rrbyday$Day[1:(length(rrbyday$Day)-1)]
   allspawn[[as.character(y)]] <- rrbyday
   gaps <- c(gaps,newgaps)
+  annualtotalsaerial <- rbind.data.frame(annualtotalsaerial,
+                              cbind.data.frame(y,raw=sum(rrbyday$N)))
+  
 }
-
+print("Annual Totals Aerial");print(annualtotalsaerial)
 #==== Take survey observations, spread out across an entire year, than back fill =====
 aerial1 <- aerial2 <- NULL
 for(year in allyears){
@@ -290,14 +299,15 @@ for(year in allyears){
   carcass3.1$cumN[I] <- cumsum(carcass3.1$N[I]) 
 }
 
-MedianCar <- LCLc <- UCLc <- LCLc95 <- UCLc95 <- rep(NA,length(allyears))
+MedianCar <- LCLc <- UCLc <- LCLc95 <- UCLc95 <- inferredCarRedds <- rep(NA,length(allyears))
 for(year in allyears){
   i <- year-min(allyears)+1
   mx <- max(carcass3.1$cumN[carcass3.1$year==year])
+  inferredCarRedds[i] <- mx
   LCLc[i] <- min(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN >= 0.1*mx])
   UCLc[i] <- max(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN <= 0.9*mx])
-  # median is a little tricky. want the mean day if the median balue is on multiple days
-  # Find maximum day below the median and minimum day above the edian and average the gap
+  # median is a little tricky. want the mean day if the median value is on multiple days
+  # Find maximum day below the median and minimum day above the median and average the gap
   low <- max(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN <= 0.5*mx])
   hi <- min(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN >= 0.5*mx])
   MedianCar[i] <- mean(low,hi)
@@ -306,13 +316,21 @@ for(year in allyears){
 }
 
 #==== additional diagnostics ====
-results <-cbind.data.frame("year"=allyears,"MedianAerial"=MedianAer,"MedianCarcass"=MedianCar,
+results <-cbind.data.frame("year"=allyears,"inferredCarRedds"=inferredCarRedds, "MedianAerial"=MedianAer,"MedianCarcass"=MedianCar,
                            "DiffsMedian"=MedianAer-MedianCar, "Aerial95"=UCL95-LCL95,"Carcass95"=UCLc95-LCLc95,
                            "Diffs95"= (UCL95-LCL95) - (UCLc95-LCLc95))
 print(results)
 summary(abs(results$DiffsMedian))
 summary(abs(results$Diffs95))
 
+print(cbind.data.frame(annualtotalsaerial,annualtotalscarcass$raw,results$inferredCarRedds,annualtotalscarcass$raw/annualtotalsaerial$raw))
+summary(cbind.data.frame(annualtotalsaerial,annualtotalscarcass$raw,results$inferredCarRedds,annualtotalscarcass$raw/annualtotalsaerial$raw))
+# SD inferredCarRedds
+print(sqrt(var(results$inferredCarRedds)))
+print(sqrt(var(annualtotalsaerial$raw)))
+
+print(cbind(allyears,LCL95,UCL95,LCLc95,UCLc95,MedianAer,MedianCar))
+write.csv(cbind(allyears,RangeAerial=results$Aerial95,RangeCarcass=results$Carcass95,MedianAer,MedianCar),file="results.csv",row.names=F)
 
 #==== Draw figure for  ms. Four Panel Figure====
 
