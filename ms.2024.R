@@ -5,17 +5,7 @@ reddtimingoffset <- 7 # days to shift a carcass timing back to spawning/redd dep
 allyears <- 2004:2023
 
 #==== FUNCTIONS ====
-zrunavg <- function(x, stretch = 1){
-  if(stretch < 1 || (floor(stretch) != stretch)) {
-    return("Stretch must be integer: 1 or greater")
-  }
-  y <- x
-  for(i in 1:stretch){y[i] <- mean(x[1:i], na.rm = TRUE)}
-  for(i in stretch:length(x)) {
-    y[i] <- mean(x[(i - stretch + 1):i], na.rm = TRUE)
-  }
-  y
-}
+
 zAdjust <- function(obs=rawcarcass2021,cc=ccmatrix){
   x1 <- sum(obs[,2])
   x2 <- sum(obs[,3])
@@ -27,49 +17,62 @@ zAdjust <- function(obs=rawcarcass2021,cc=ccmatrix){
   A4 <- x4 - A3*cc[4,4] - A2*cc[4,3] - A1*cc[4,2]
   return(c(A1,A2,A3,A4))
 }
-zExpand <- function(raw=c(0,10,10,0),scal = 1){
+
+zExpand <- function(raw=c(0,10,10,0),scal = 1,method="round"){
   if(scal <= 0){out <- rep(0,length(raw));return(out)}
   out <- raw
   tot <- sum(raw)*scal
   # step through each day, add up extra carcasses (proportion on date/ total) until summed to one, then remove from total
   tally <- 0
-  tallytally <- 0
   for(j in 1:length(raw)){
     tally <- tally + raw[j]*scal
-    if(tally > -1){
-      out[j] <- ceiling(tally) ; tally <- tally-ceiling(tally);
-    } else {print(paste("Tally",tally))}
+    # ceiling method
+    if(method == "round"){
+      if(tally > 0){
+        out[j] <- round(tally)
+      }
+      tally <- tally-round(tally);
+    } else {
+      if(tally > -1){
+        out[j] <- ceiling(tally) ; tally <- tally-ceiling(tally);
+      }
+    }
   }
   return(out)
 }
 
 #==== Graphing functions ====
-zridges <- function(scale=40,maxyr = 2024,minyr=2004,type="",use1=aerial3,t1="",colo =NULL,xlimm=NULL){
-  par(mar=c(4,2,1,0),mgp=c(1.8,0.4,0))
-  cexx <- 1
-  if(type=="png")cexx <- par()$cex*1.8
-  if(type=="pdf")cexx <- par()$cex*1
-  cexaxis <- cexx
-  cexaxis <- 1.3 *cexx
+zridges <- function(usescale=40,maxyr = 2024,minyr=2004,type="",use1=aerial2,t1="",
+                    hist=NULL,colo =NULL,xlimm=NULL,localaxis=NULL){
+  par(mar=c(4.5,3,3,1),mgp=c(2.5,1,0))
+                 cexx <- par()$cex*1.0
+  if(type=="png")cexx <- par()$cex*1.2
+  if(type=="pdf")cexx <- par()$cex*1.2
+  cexaxis <- cexx*0.9
   yrz <- minyr:maxyr
   totalz <- rep(0,length(yrz)) ; for(y in yrz){totalz[match(y,yrz)] <- sum(use1$N[use1$year==y])}
-   # 108 is earliest survey DOY in carcass or aerial
+  # 108 is earliest survey DOY in carcass or aerial
   
-  if(is.null(xlimm))xlimm <- c(108,249)
+  if(is.null(xlimm))xlimm <- c(89,250)
   if(is.null(colo))colo <- "darkgreen"
-  plot(0,0,xlim=xlimm,ylim=c(minyr,maxyr+0.8),axes=FALSE,xlab="",ylab="",cex=cexx,xaxs="i", yaxs="i");
-  
-  text(rep(125,length(yrz)),yrz+0.5,yrz,cex=cexaxis,adj=0) ; # paste0(yrz,"\nN =",totalz)
-  abline(v=c(121,152,182,213,244),lwd=1,lty=2,col="grey90")
-  axis(1,at=c(121,152,182,213,244),labels=c("May 1 ","Jun 1 ","Jul 1 ","Aug 1 ","Sep 1  "),cex.axis=cexaxis)
-   j <- 0 + minyr-2004
+  plot(0,0,xlim=xlimm,ylim=c(minyr,maxyr+1),axes=FALSE,xlab="",ylab="",cex=cexx,xaxs="i", yaxs="i");
+  abline(v=c(90,121,152,182,213,244),lwd=1,lty=2,col="grey90")
+  axis(1,at=c(90,121,152,182,213,244),labels=c("Apr 1","May 1","Jun 1","Jul 1","Aug 1","Sep 1"),cex.axis=cexaxis*1)
+  j <- 0 + minyr-2004
   for(y in yrz){
-    zdraw(use2=use1[use1$year==y,],scaleit=scale,y=y,colo=colo,xlimm=xlimm)
+    if(usescale=="local"){ drawscale <- ceiling(max(10,max(use1$N[use1$year==y])*1.4)/10)*10 } 
+    if(usescale=="limited"){ drawscale <- ifelse(max(use1$N[use1$year==y]) > 40,300,50) }
+    if(is.numeric(usescale)){drawscale=usescale}
+    # print(drawscale) ; print(paste(y,"drawscale",drawscale,max(use1$N[use1$year==y])))
+    zdraw(use2=use1[use1$year==y,],scaleit=drawscale,y=y,hist=hist,colo=colo,xlimm=xlimm,localaxis=TRUE,cexaxis=cexaxis)
+    abline(h=y)
   }
-  text(260,maxyr+0.7,t1,cex=1.5,adj=0)
+  mtext(t1,3,cex=1.5,line=3)
+  text(rep(95,length(yrz)),yrz+0.5,yrz,cex=cexx,adj=0) ; # paste0(yrz,"\nN =",totalz)
 }
 
-zdraw <- function(use2,scaleit=30,y=year,colo=NULL,hist=NULL,xlimm=NULL){
+
+zdraw <- function(use2,scaleit=30,y=year,hist=NULL,colo=NULL,xlimm=NULL,localaxis=NULL,cexaxis=1){
   if(is.null(xlimm)) I <- 118:243 else I <- min(xlimm):max(xlimm)
   j <- j + 1
   yy <- use2$N[I]
@@ -83,10 +86,14 @@ zdraw <- function(use2,scaleit=30,y=year,colo=NULL,hist=NULL,xlimm=NULL){
     lines(I,yy,col=coll)
   } else{
     for(i in 1:length(I)){  
-      # segments(I[i],y,I[i],yy[i],col=colo,lwd=4) 
       arrows(I[i],y,I[i],yy[i],length=0,col=colo,lwd=2,lend=2) 
-      
     }
+  }
+  if(!is.null(localaxis)){# draw the y axis
+    if(scaleit== 50) axlabs <- c(0,10,20,30,40) else axlabs=c(0,50,100,150,200,250)
+     ats <- y + axlabs/scaleit
+    # cat(y," ");cat(max(use2$N[I])," "); cat(max(yy)," ") ; cat(max(axlabs)," ") ; cat(max(ats),par()$usr[4],"\n")
+    axis(2,at=ats,labels=axlabs,las=2,cex.axis=cexaxis) # needs to be only on the year range specific areas
   }
 }
 
@@ -109,16 +116,11 @@ carcassrawsections <- NULL
 carcassAdjustsections <- NULL
 for(year in allyears){
   w <- x[x$year==year,]
-  # moot for allyears 2004 - 2023 bu retained for available pre2004 processing
-  w$Section[w$Section==2.1] <- 2
-  w$Section[w$Section==1.2] <- 2
-  w$Section[w$Section==3.2] <- 3
-  w$Section[w$Section==2.3] <- 3
-  w$Section[w$Section==4.3] <- 4
-  w$Section[w$Section==3.4] <- 4
   w1 <- w %>% mutate(Date2 = as.Date(mdy(Date))) %>% select(-Date) %>% rename(Date=Date2)
   xx <- w1 %>% group_by(year,Date,Section) %>% summarise(SumOfCount= sum(SumOfCount))%>% pivot_wider(names_from = Section,
-                                                                                                     values_from=SumOfCount,values_fill=0) %>% mutate(Day=yday(Date)) %>% ungroup() %>% select(-c(year,Date))
+        values_from=SumOfCount,values_fill=0) %>% 
+        mutate(Day=yday(Date)) %>% ungroup() %>% select(-c(year,Date))
+  # Order the data for consistency 
   if(match("4",names(xx),nomatch=0) == 0){xx <- bind_cols(xx,`4`=0)}
   xx <- xx %>% relocate(`1`,.after = `Day`)
   xx <- xx %>% relocate(`2`,.after = `1`)
@@ -133,46 +135,57 @@ for(year in allyears){
 carcassrawsections$Total= rowSums(carcassrawsections[,-1])
 carcassAdjustsections$Total= rowSums(carcassAdjustsections[,-1])
 print(names(carcassraw))
-print(carcassrawsections)[-c(1:4),]
-print(carcassAdjustsections)[-c(1:4),]
+print(carcassrawsections)
+print(carcassAdjustsections)
 
-# Use the carcassraw list to generate a carcassexpand list
+#==== Generate carcassexpand list ====
 
-carcassexpand <- list()
+carcassexpand <- list() 
+carcassexpand.type478 <- list() 
+carcassraw.fakeexpand <- list()
 expand.raw.diffs <- NULL
 outDirectory <- "generated/"
 for(year in allyears){ 
-    use<- carcassraw[[as.character(year)]] %>% rename(RKM483='1') %>% rename(RKM479='2' ) %>% rename(RKM474='3') %>% rename(RKM454='4')
-    holdDat <- cbind.data.frame(Year=year,X1=NA,X2=NA,X3=NA,X4=NA,Totals=NA)
+   # use<- carcassraw[[as.character(year)]] %>% rename(RKM483='1') %>% rename(RKM478='2' ) %>% rename(RKM474='3') %>% rename(RKM454='4')
+  use<- carcassraw[[as.character(year)]] %>% rename(RKM483='1') %>% rename(RKM479='2' ) %>% rename(RKM474='3') %>% rename(RKM454='4')
+  
+  holdDat <- cbind.data.frame(Year=year,X1=NA,X2=NA,X3=NA,X4=NA,Totals=NA)
     new <- zAdjust(use,ccmatrix)
     holdDat[1,2:5] <-new
     holdDat[1,6] <-sum(new)
     newuse <- use
-    newuse[[1]] <- newuse[[1]]-reddtimingoffset
-    for(colu in 2:(dim(use)[2])){
-      sect <- colu - 1
+    newuseceiling <- use
+    for(colu in 2:ncol(use)){
       surveyraw <- sum(use[,colu])
       expp <- holdDat[holdDat$Year == year,colu]
       scalar <- 0
       if(surveyraw > 0) scalar <- expp/surveyraw
       # print(paste(sect,colu,expp,surveyraw,scalar))
       if(scalar > 0){
-          newuse[[colu]] <- zExpand(use[[colu]] ,scalar) # OK because x is a tibble, right?
+        newuse[[colu]] <- zExpand(use[[colu]] ,scalar,method="round") 
+        newuseceiling[[colu]] <- zExpand(use[[colu]] ,scalar,method="ceiling") 
       } else {
-        newuse[[colu]] <- rep(0,length=length(newuse[[colu]]))
+        newuse[[colu]]        <- rep(0,length=length(newuse[[colu]]))
+        newuseceiling[[colu]] <- rep(0,length=length(newuseceiling[[colu]])) 
       }
     }
     # find blank rows
-    newuse2 <- newuse[!apply(newuse[,-1] == 0, 1, all),]
-    carcassexpand[[as.character(year)]] <- newuse2
-    write_csv(newuse2,paste0(outDirectory,"carcassExpand.",year,".csv"))
+    newuse2 <- newuse[!apply(newuse[,-1] == 0, 1, all),]  # works
+    newuse2[[1]] <- newuse2[[1]]-reddtimingoffset
+    carcassraw.fakeexpand[[as.character(year)]] <- use
+    # carcassexpand[[as.character(year)]] <- newuse2
+    # carcassexpand.type478[[as.character(year)]] <- newuse2
+    write_csv(use,paste0(outDirectory,"carcassraw.fakeexpand.",year,".csv"))
+    #write_csv(newuse2,paste0(outDirectory,"carcassExpand.",year,".csv"))
+    # write_csv(newuse2,paste0(outDirectory,"carcassExpand.type478.",year,".csv"))
+    
     if(year==min(allyears))print(paste("year","raw","expand"))
     print(paste(year,sum(use[,-1]),sum(newuse2[,-1]),sum(use[,-1]) - sum(newuse2[,-1])))
-    expand.raw.diffs <- c(expand.raw.diffs,sum(use[,-1]) - sum(newuse2[,-1]))
+    expand.raw.diffs <- rbind.data.frame(expand.raw.diffs,cbind.data.frame(year,raw=sum(use[,-1]),expand=sum(newuse2[,-1]),diff=sum(use[,-1]) - sum(newuse2[,-1])))
 }
 print(summary(expand.raw.diffs))
 
-# WEB call to CBR database for aerial redds
+#==== WEB call to CBR database for aerial redds ====
 # if(0) will prevent web calls and load from static file locally generated
 if(0){
   usereddsaerial <- list()
@@ -190,7 +203,7 @@ if(0){
 }
 
 
-#=== comb through usereddsaerial list for a tally by in or out of carcass area (RKM444 or above) ====
+#=== Tally aerial by in/out of carcass area (RKM444 or above) ====
 # RKM names in aerial redd  data are locations used WITHIN the reaches. Compare to table 1 in manuscript
 allabove <- allbelow <- 0
 for(year in allyears){
@@ -204,8 +217,8 @@ for(year in allyears){
 }
 print(paste(allabove,allbelow,allbelow/(allabove+allbelow)))
 
-#=== process aerial ====
-allspawn <- gaps <- annualtotalsaerial <-  NULL
+#=== Process aerial ====
+allspawn <- gaps <- annualtotalsaerial <-  aerialsections <- NULL
 for(y in allyears){ 
   rr <- usereddsaerial[[as.character(y)]]
   rrbyday <- as_tibble(rr) %>%  group_by(Day) %>% transmute(N = sum(across(starts_with("RKM"))))
@@ -214,10 +227,12 @@ for(y in allyears){
   gaps <- c(gaps,newgaps)
   annualtotalsaerial <- rbind.data.frame(annualtotalsaerial,
                               cbind.data.frame(y,raw=sum(rrbyday$N)))
-  
+  aerialsections <- rbind.data.frame(aerialsections,cbind.data.frame( year=y,"R1"=sum(rr$RKM483),"R2"=sum(rr$RKM479),"R3"=sum(rr$RKM470),"R4"=sum(rr$RKM450)))
 }
 print("Annual Totals Aerial");print(annualtotalsaerial)
-#==== Take survey observations, spread out across an entire year, than back fill =====
+print(aerialsections)
+
+#==== Aerial process to spread out across an entire year, than back fill =====
 aerial1 <- aerial2 <- NULL
 for(year in allyears){
   aerial1 <- rbind.data.frame(aerial1,cbind.data.frame(year=year,allspawn[[as.character(year)]]))
@@ -228,69 +243,52 @@ for(i in 1:nrow(aerial1)){
   aerial2$N[I] <- aerial1$N[i];
 }
 
-aerial3 <- aerial2
-# work backwards from the end
-i <- nrow(aerial2)
-while(i > 1){
-  thisN <- aerial2$N[i]
-  thisD <- aerial2$doy[i]
-  if(thisN > 0){
-    # divide these redds backwards in time
-    # find next index
-    j <- i-1
-    while(j > 1){
-      if(aerial2$N[j] > 0){
-        break
-      } else {j <- j-1 }
-      # limit to 7 days
-      if(i-j > 7) break
-    }
-    gap <- i - j
-    k <- i
-    remains <- thisN
-    while(k > j){
-      if(remains < 1){
-        break;
-      } else {
-        aerial3$N[k] <- round(remains/(k-j) + 0.5)
-        remains <- remains - round(remains/(k-j) + 0.5) 
-        k <- k - 1
-      }
-    }
-    i <- k
-  } else {i <- i-1}
-  
-}
-aerial3$year  <- as.numeric(aerial3$year)
-aerial3$cumN <- NULL
+
 
 for(y in allyears){
-  aerial3$cumN[aerial3$year == y] <- cumsum(aerial3$N[aerial3$year == y]) 
+  aerial2$cumN[aerial2$year == y] <- cumsum(aerial2$N[aerial2$year == y]) 
 }
 
-LCL <- UCL <- LCL95 <- UCL95 <- MedianAer <- rep(NA,length(allyears))
+LCL <- UCL <- LCL95 <- UCL95 <- MedianAer <- MedianAerDate <- rep(NA,length(allyears))
 for(year in allyears){
   i <- year-min(allyears) +1
-  mx <- max(aerial3$cumN[aerial3$year==year])
-  LCL[i] <- min(aerial3$doy[aerial3$year==year & aerial3$cumN >= 0.1*mx])
-  UCL[i] <- max(aerial3$doy[aerial3$year==year & aerial3$cumN <= 0.9*mx])
+  mx <- max(aerial2$cumN[aerial2$year==year])
+  LCL[i] <- min(aerial2$doy[aerial2$year==year & aerial2$cumN >= 0.1*mx])
+  UCL[i] <- max(aerial2$doy[aerial2$year==year & aerial2$cumN <= 0.9*mx])
   # median is a little tricky. want the mean day if the median balue is on multiple days
-  # Find maximum day below the median and minimum day above the edian and average the gap
-  low <- max(aerial3$doy[aerial3$year==year & aerial3$cumN <= 0.5*mx])
-  hi <- min(aerial3$doy[aerial3$year==year & aerial3$cumN >= 0.5*mx])
+  # Find maximum day below the median and minimum day above the median and average the gap
+  low <- max(aerial2$doy[aerial2$year==year & aerial2$cumN <= 0.5*mx])
+  hi <- min(aerial2$doy[aerial2$year==year & aerial2$cumN >= 0.5*mx])
   MedianAer[i] <- mean(low,hi)
-  LCL95[i] <- min(aerial3$doy[aerial3$year==year & aerial3$cumN >= 0.025*mx])
-  UCL95[i] <- max(aerial3$doy[aerial3$year==year & aerial3$cumN <= 0.975*mx])
+  junk <- as.Date(paste0(year-1,"-12-31")) + days(MedianAer[i])
+  MedianAerDate[i] <- paste(month(junk,label=TRUE,abbr=TRUE),day(junk)) 
+  LCL95[i] <- min(aerial2$doy[aerial2$year==year & aerial2$cumN >= 0.025*mx])
+  UCL95[i] <- max(aerial2$doy[aerial2$year==year & aerial2$cumN <= 0.975*mx])
 }
 
 #==== process carcass ====
-# Don't need gaps, because we smooth 3 days twice
-allspawnCar <- NULL
+# Don't need gaps, because we can smooth 3 days twice
+# Also, normalize the spawning distributions to visualize inter-annual normalcy
+allspawnCar <- allnormalized <- allmeans <- allstds <- alljunk <- NULL
 for(y in allyears){ 
   rr <- carcassexpand[[as.character(y)]]
   rrbyday <- as_tibble(rr) %>%  group_by(Day) %>% transmute(N = sum(across(starts_with("RKM"))))
   allspawnCar[[as.character(y)]] <- rrbyday
+  junk <- rep(rrbyday$Day,rrbyday$N)
+  thismean <- mean(junk)
+  thisstd <- sqrt(var(junk))
+  junk2 <- (junk-thismean)/thisstd
+  allnormalized <- rbind.data.frame(allnormalized,cbind.data.frame("year"=y,"Nday"=rrbyday$Day - thismean,"N"=rrbyday$N))
+  allmeans <- c(allmeans,thismean)
+  allstds <- c(allstds,thisstd)
+  alljunk <- c(alljunk,junk)
 }
+allGstd <- sqrt(var(allnormalized$Nday))
+allGmean <- mean(allmeans)
+hist(rep(allnormalized$Nday,allnormalized$N),breaks=50,freq=FALSE,main="")
+x<- allGmean+seq(-80,80,by=5)
+lines(x-allGmean,dnorm(x,mean=allGmean,sd=allGstd))
+curve(dnorm(x,mean=allGmean,sd=allGstd),add=TRUE)
 
 carcass1 <- carcass2 <- NULL
 for(year in allyears){
@@ -301,162 +299,127 @@ for(i in 1:nrow(carcass1)){
   I <- carcass2$year == carcass1$year[i] & carcass2$doy==carcass1$Day[i]; 
   carcass2$N[I] <- carcass1$N[i];
 }
-carcass3.1 <- carcass3 <- carcass2
-
+carcass2$cumN <- NA
+# carcass3.1 formerly used here. change back to carcass2
+MedianCar <- MedianCarDate <- LCLc <- UCLc <- LCLc95 <- UCLc95 <- inferredCarRedds <- rep(NA,length(allyears))
 for(year in allyears){
-  # Smooth by 3 days twice
-  I <- carcass2$year == year
-  carcass3$N[I][-length(carcass2$N[I])] <- zrunavg(carcass2$N[I],3)[-1]
-  carcass3.1$N[I][-length(carcass3$N[I])] <- zrunavg(carcass3$N[I],3)[-1]
-  carcass3.1$cumN[I] <- cumsum(carcass3.1$N[I]) 
-}
-
-MedianCar <- LCLc <- UCLc <- LCLc95 <- UCLc95 <- inferredCarRedds <- rep(NA,length(allyears))
-for(year in allyears){
+  carcass2$cumN[carcass2$year==year] <- cumsum(carcass2$N[carcass2$year==year])
   i <- year-min(allyears)+1
-  mx <- max(carcass3.1$cumN[carcass3.1$year==year])
+  mx <- max(carcass2$cumN[carcass2$year==year])
   inferredCarRedds[i] <- mx
-  LCLc[i] <- min(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN >= 0.1*mx])
-  UCLc[i] <- max(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN <= 0.9*mx])
+  LCLc[i] <- min(carcass2$doy[carcass2$year==year & carcass2$cumN >= 0.1*mx])
+  UCLc[i] <- max(carcass2$doy[carcass2$year==year & carcass2$cumN <= 0.9*mx])
   # median is a little tricky. want the mean day if the median value is on multiple days
   # Find maximum day below the median and minimum day above the median and average the gap
-  low <- max(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN <= 0.5*mx])
-  hi <- min(carcass3.1$doy[carcass3.1$year==year & carcass3.1$cumN >= 0.5*mx])
+  low <- max(carcass2$doy[carcass2$year==year & carcass2$cumN <= 0.5*mx])
+  hi <- min(carcass2$doy[carcass2$year==year & carcass2$cumN >= 0.5*mx])
   MedianCar[i] <- mean(low,hi)
-  LCLc95[i] <- min(carcass3$doy[carcass3.1$year==year & carcass3.1$cumN >= 0.025*mx])
-  UCLc95[i] <- max(carcass3$doy[carcass3.1$year==year & carcass3.1$cumN <= 0.975*mx])
+  junk <- as_date(paste0(year-1,"-12-31")) + days(MedianCar[i])
+  MedianCarDate[i] <- paste(month(junk,label=TRUE,abbr=TRUE),day(junk)) 
+  LCLc95[i] <- min(carcass2$doy[carcass2$year==year & carcass2$cumN >= 0.025*mx])
+  UCLc95[i] <- max(carcass2$doy[carcass2$year==year & carcass2$cumN <= 0.975*mx])
 }
 
-#==== additional diagnostics ====
-results <-cbind.data.frame("year"=allyears,"inferredCarRedds"=inferredCarRedds, "MedianAerial"=MedianAer,"MedianCarcass"=MedianCar,
+#==== Additional diagnostics ====
+results <-cbind.data.frame("year"=allyears,"MedianAerial"=MedianAer,"MedianAerDate"=MedianAerDate,"MedianCarcass"=MedianCar,"MedianCarcassDate"=MedianCarDate,
                            "DiffsMedian"=MedianAer-MedianCar, "Aerial95"=UCL95-LCL95,"Carcass95"=UCLc95-LCLc95,
-                           "Diffs95"= (UCL95-LCL95) - (UCLc95-LCLc95))
+                           "Diffs95"= (UCL95-LCL95) - (UCLc95-LCLc95),aerialcount=annualtotalsaerial[,2],carcasscount=annualtotalscarcass$raw,
+                       adjust=inferredCarRedds,delta=inferredCarRedds-annualtotalscarcass$raw,
+                       car.aer.ratio=annualtotalscarcass$raw/annualtotalsaerial$raw)
+
 print(results)
+summary(results)
 summary(abs(results$DiffsMedian))
 summary(abs(results$Diffs95))
 
-print(cbind.data.frame(annualtotalsaerial,annualtotalscarcass$raw,results$inferredCarRedds,annualtotalscarcass$raw/annualtotalsaerial$raw))
-summary(cbind.data.frame(annualtotalsaerial,annualtotalscarcass$raw,results$inferredCarRedds,annualtotalscarcass$raw/annualtotalsaerial$raw))
 # SD inferredCarRedds
-print(sqrt(var(results$inferredCarRedds)))
-print(sqrt(var(annualtotalsaerial$raw)))
+print(sqrt(var(results$adjust)))
+print(sqrt(var(results$carcasscount)))
+print(sqrt(var(results$aerialcount)))
+print(sqrt(var(results$MedianAerial)))
+print(sqrt(var(results$MedianCarcass)))
+print(sqrt(var(results$Aerial95)))
+print(sqrt(var(results$Carcass95)))
 
-print(cbind(allyears,LCL95,UCL95,LCLc95,UCLc95,MedianAer,MedianCar))
-write.csv(cbind(allyears,RangeAerial=results$Aerial95,RangeCarcass=results$Carcass95,MedianAer,MedianCar),file="results.csv",row.names=F)
+write.csv(results,file="results.csv",row.names=F)
+
+
+#==== Draw fig with  counts in timeseries ====
+for(fig in c("pdf")){   # """png" ){   #  
+  if(fig == "pdf") pdf(file="counttimeseries.pdf",width=7,height=7)
+  if(fig == "png") png(file="counttimeseries.png",width=700,height=700)
+  colos <- c("darkgreen","orange","maroon","darkblue")
+  par(mfrow=c(2,1))
+  par(mar=c(3,4,1,1))
+  x <- aerialsections
+  x[x<0] = 0
+  spacespace <- 0.2
+  barplot(t(x[,c(5:2)]),border=NA,col=colos,ylim=c(0,2000),space=spacespace,ylab="Counts")
+  legend("topright",bty="n",fill=rev(colos),legend=c("Reach 1","Reach 2","Reach 3","Reach 4"))
+  axis(1,labels=allyears,at=(allyears-2003.5)*(1+ spacespace))
+  abline(h=0)
+  text(4,1800,"Aerial Survey Distributions by Reach",adj=0)
+  x <- carcassAdjustsections
+  x[x<0] = 0
+  barplot(t(x[,c(5:2)]),border=NA,col=colos,ylim=c(0,3000),space=spacespace,ylab="Counts")
+  legend("topright",bty="n",fill=rev(colos),legend=c("Reach 1","Reach 2","Reach 3","Reach 4"))
+  axis(1,labels=allyears,at=(allyears-2003.5)*(1  + spacespace))
+  abline(h=0)
+  text(4,2800,"Adjusted Carcass Survey Distributions by Reach",adj=0)
+  if(fig=="pdf" | fig == "png") dev.off()
+}
 
 #==== Draw figure for  ms. Four Panel Figure====
-
-for(fig in  "pdf"){  #  c("pdf","png")){   # ""){    #  
-     cexaxis <- 1 ; cexoutside <- 0.8 ;  cexpanel <-  0.8
-   if(fig == "pdf"){
-     pdf(file="bothdistrib.pdf",width=7,height=9)
-     cexaxis <- 1 ; cexoutside <- 0.8 ;  cexpanel <-  0.8
-  }
-  if(fig == "png") png(file="bothdistrib.png",width=700,height=900)
+for(fig in c("" )){  #   c("","png","pdf")){  #   
+  if(fig == "pdf")  pdf(file="bothdistrib.pdf",width=14,height=18)
+  if(fig == "png")  png(file="bothdistrib.png",width=1000,height=1200)
   par(mfrow=c(1,4))
-  # For shading
-  usecol <- rgb(10,10,10,4,NULL,25)
-  usescale=60
-  coll1 <- coll2 <- NULL
-  coll1 <- rgb(5,10,5,15,NULL,25)
-  coll2 <- rgb(10,5,10,15,NULL,25)
-  {
-  want <- 2014:2023 ; I <- aerial3$year >= min(want) & aerial3$year <= max(want)
-  zridges(scale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 =aerial3[I,] ,t1 = "", colo=coll1)
-  polygon(c(LCL[match(want,allyears)],rev(UCL[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  polygon(c(LCL95[match(want,allyears)],rev(UCL95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  lines(MedianAer[match(want,allyears)],want)
-      # y axis a little more complex. repeat scaling across all year only on first of layout
-      for(k in min(want):max(want)){
-        scaleaxis <- pretty(0:usescale); scaleaxis <- scaleaxis[-length(scaleaxis)]
-        yats <- k+scaleaxis/usescale
-        axis(2,at=yats,label=scaleaxis,las=2,lwd=0.5,lwd.ticks=1,col.ticks="black",col.axis="black",mgp=c(3,0,-1),cex.axis=cexaxis)
-      }
-  mtext("(a) Aerial Surveys",line=-0.5,adj=1,cex=cexpanel)
-
-  want <- 2004:2013 ; I <- aerial3$year >= min(want) & aerial3$year <= max(want)
-  zridges(scale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 =aerial3[I,] ,t1 = "",colo=coll1)
-  polygon(c(LCL[match(want,allyears)],rev(UCL[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  polygon(c(LCL95[match(want,allyears)],rev(UCL95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  lines(MedianAer[match(want,allyears)],want)
-  
-  want <- 2014:2023 ; I <- carcass3$year >= min(want) & carcass3$year <= max(want)
-  zridges(scale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 = carcass3[I,] ,t1 ="", colo=coll2)
-  polygon(c(LCLc[match(want,allyears)],rev(UCLc[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  polygon(c(LCLc95[match(want,allyears)],rev(UCLc95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  lines(MedianCar[match(want,allyears)],want)
-  
-  mtext("(b) Carcass Surveys",line=-0.5,adj=1,cex=cexpanel)
-  
-  want <- 2004:2013 ; I <- carcass3$year >= min(want) & carcass3$year <= max(want)
-  zridges(scale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 = carcass3[I,] ,t1 ="", colo=coll2)
-  polygon(c(LCLc[match(want,allyears)],rev(UCLc[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  polygon(c(LCLc95[match(want,allyears)],rev(UCLc95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
-  lines(MedianCar[match(want,allyears)],want)
+  par(mar=c(4.5,3,2,1),mgp=c(2.5,1,0))
+  par(cex=1)
+  cexaxis <- 1 *par()$cex ; cexoutside <- par()$cex ;  cexpanel <-  1.2*par()$cex
+  if(fig == "pdf"){
+    cexaxis <- 1 *par()$cex ; cexoutside <- 1.5*par()$cex ;  cexpanel <-  1.5*par()$cex
   }
-  mtext("Estimated Spawning Date",side=1,outer=TRUE,line=-2,cex=cexoutside)
+
+  # For shading
+  usecol <- rgb(10,10,10,3,NULL,25)
+  # usescale=65
+  usescale="limited"
+  coll1 <- coll2 <- NULL
+  coll1 <- rgb(5,10,5,20,NULL,25)
+  coll2 <- rgb(10,5,10,20,NULL,25)
+  usehist="hist" ; # else usehist=NULL
+
+  want <- 2014:2023 ; I <- aerial2$year >= min(want) & aerial2$year <= max(want)
+  zridges(usescale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 =aerial2[I,] ,t1 = "", colo=coll1,hist=usehist)
+  #polygon(c(LCL[match(want,allyears)],rev(UCL[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  polygon(c(LCL95[match(want,allyears)],rev(UCL95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  lines(MedianAer[match(want,allyears)],want)
+      
+  mtext("(a) Aerial Surveys",line=0.5,adj=1,cex=cexpanel)
+
+  want <- 2004:2013 ; I <- aerial2$year >= min(want) & aerial2$year <= max(want)
+  zridges(usescale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 =aerial2[I,] ,t1 = "",colo=coll1,hist=usehist)
+  #polygon(c(LCL[match(want,allyears)],rev(UCL[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  polygon(c(LCL95[match(want,allyears)],rev(UCL95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  lines(MedianAer[match(want,allyears)],want)
+  
+  want <- 2014:2023 ; I <- carcass2$year >= min(want) & carcass2$year <= max(want)
+  zridges(usescale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 = carcass2[I,] ,t1 ="", colo=coll2,hist=usehist)
+  #polygon(c(LCLc[match(want,allyears)],rev(UCLc[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  polygon(c(LCLc95[match(want,allyears)],rev(UCLc95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  lines(MedianCar[match(want,allyears)],want)
+  
+  mtext("(b) Carcass Surveys",line=0.5,adj=1,cex=cexpanel)
+  
+  want <- 2004:2013 ; I <- carcass2$year >= min(want) & carcass2$year <= max(want)
+  zridges(usescale=usescale,maxyr=max(want),minyr=min(want),type=fig,use1 = carcass2[I,] ,t1 ="", colo=coll2,hist=usehist)
+  #polygon(c(LCLc[match(want,allyears)],rev(UCLc[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  polygon(c(LCLc95[match(want,allyears)],rev(UCLc95[match(want,allyears)])),c(want,rev(want)),col=usecol,border=usecol)
+  lines(MedianCar[match(want,allyears)],want)
+
+  mtext("Date",side=1,outer=TRUE,line=-2,cex=cexoutside)
   if(fig != "") dev.off()
 }
 
-#==== Supplement figure with each year separated ====
-for(fig in c("pdf")){   #  ""){    #  
-  if(fig == "pdf") pdf(file="yeardetails.pdf",width=7,height=7)
-  if(fig == "png") png(file="yeardetails.png",width=800,height=800)
-  
-for(year in 2004:2023) { # 2023){  # 2019){   #  
-  par(mfrow=c(2,2))  
-  for(j in 1:4){
-    # cycle through the smooth, raww aerial and caracss combos nad plot
-    par(mar=c(4,3,0,0),mgp=c(2.2,0.7,0))
-    if(j==1){use1 <- aerial3;t1 <- paste("(a)",year,"smoothed\naerial survey")}
-    if(j==2){use1 <- aerial2;t1 <- paste("(b)",year,"raw\naerial survey")}
-    if(j==3){use1 <- carcass3;t1 <- paste("(c)",year,"smoothed\ncarcass survey")}
-    if(j==4){use1 <- carcass2;t1 <- paste("(d)",year,"raw\ncarcass survey")}
-  if(j ==3 | j==4){
-    par(mar=c(6,3,0,0))
-  }
-  cexx <- 1.2
-  if(fig=="png")cexx <- par()$cex*1.8
-  if(fig=="pdf")cexx <- par()$cex*1
-  cexaxis <- 1.3 *cexx
-  
-  xlimm <- c(108,249)
-  histcolor <- rgb(.20,.20,.60,1)
-  
-  plot(0,0,xlim=xlimm,ylim=c(year,year+1),axes=FALSE,xlab="",ylab="",cex=cexx,xaxs="i", yaxs="i");
-  abline(v=c(121,152,182,213),lwd=1,lty=2,col="grey90")
-  use2 <- use1[use1$year==year,]
-  scalar <- max(c(aerial2$N[aerial2$year==year],carcass2$N[carcass2$year==year]),na.rm=TRUE)
-  
-    vals <-pretty(0:scalar)
-    # vals <- vals[vals > 0]
-    vals <- vals[-length(vals)]
-    ats <- year + vals/scalar
-    abline(h=ats,lwd=1,lty=2,col="grey90")
-    if(j==1 | j==3){  
-      axis(2,at=ats,labels=vals, las=2,lwd=1,lwd.ticks=1,cex.axis=cexaxis) ;  
-      axis(2,at=ats,labels=vals, las=2,lwd=1,lwd.ticks=1,col="white",col.ticks="black",col.axis="white",line=3) ; 
-    } # draw Y axis. Needs some scaling to the year.
-    # box()
-  zdraw(use2,scaleit=scalar,hist=TRUE,colo=histcolor,xlimm=xlimm)
-  text(130,year+.9,t1,cex=cexaxis,adj=0)
-  # if(j==1)text(120,year+1,year,cex=cexx)
-
-  if(j==3 | j ==4){ 
-    axis(1,at=c(121,152,182,213,244),labels=c("May 1 ","Jun 1 ","Jul 1 ","Aug 1 ","Sep 1  "),
-       outer=FALSE,cex.axis=cexaxis,lwd=1,lwd.ticks=1)
-  }
-  } 
-  I <- 118:243 
- # par(mfrow=c(1,1))
- # plot(carcass2$doy[carcass2$year==year][I],cumsum(carcass2$N[carcass2$year==year][I]),type="l",lwd=8,col="grey80")
- # lines(carcass3$doy[carcass2$year==year][I],cumsum(carcass3$N[carcass2$year==year][I]),type="l",lwd=4,col="darkgreen")
- # lines(carcass3.1$doy[carcass2$year==year][I],cumsum(carcass3.1$N[carcass2$year==year][I]),type="l",lwd=2,col="pink")
- # 
-  mtext("Estimated Spawning Date",side=1,outer=TRUE,line=-2,cex=cexaxis)
-  
-}
-
-if(fig != "")dev.off()
-}
 
